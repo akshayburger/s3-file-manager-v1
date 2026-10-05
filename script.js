@@ -1,738 +1,204 @@
-const STORAGE_LIMIT = 10 * 1024 * 1024; // 10 MB
-
+const LIMIT = 10 * 1024 * 1024;
 let files = loadFiles();
 
-const fileInput = document.getElementById("fileInput");
-const selectedFile = document.getElementById("selectedFile");
-
-
-// =====================================================
-// LOAD SAVED FILES
-// =====================================================
+const $ = id => document.getElementById(id);
 
 function loadFiles() {
-
     try {
-
-        const saved = localStorage.getItem("s3Files");
-
-        if (!saved) {
-            return [];
-        }
-
-        const parsed = JSON.parse(saved);
-
-        return Array.isArray(parsed) ? parsed : [];
-
-    } catch (error) {
-
-        console.error("Could not load files:", error);
-
+        const data = JSON.parse(localStorage.getItem("s3Files") || "[]");
+        return Array.isArray(data) ? data : [];
+    } catch {
         return [];
-
     }
-
 }
-
-
-// =====================================================
-// FILE SELECTION
-// =====================================================
-
-fileInput.addEventListener("change", function () {
-
-    if (this.files && this.files.length > 0) {
-
-        selectedFile.textContent =
-            "Selected: " + this.files[0].name;
-
-    } else {
-
-        selectedFile.textContent =
-            "No file selected";
-
-    }
-
-});
-
-
-// =====================================================
-// UPLOAD FILE
-// =====================================================
-
-function uploadFile() {
-
-    if (!fileInput.files || fileInput.files.length === 0) {
-
-        showToast("⚠️ Please choose a file first.");
-
-        return;
-    }
-
-
-    const file = fileInput.files[0];
-
-
-    const currentStorage = files.reduce(
-        (total, item) => total + Number(item.size || 0),
-        0
-    );
-
-
-    if (currentStorage + file.size > STORAGE_LIMIT) {
-
-        showToast("❌ Storage limit exceeded!");
-
-        return;
-    }
-
-
-    const fileObject = {
-
-        id: Date.now() + Math.random(),
-
-        name: file.name,
-
-        size: file.size,
-
-        type: file.type || "Other",
-
-        uploadedAt: new Date().toLocaleString()
-
-    };
-
-
-    files.push(fileObject);
-
-    saveFiles();
-
-    fileInput.value = "";
-
-    selectedFile.textContent = "No file selected";
-
-    renderFiles();
-
-    showToast("✅ Object uploaded to S3!");
-
-}
-
-
-// =====================================================
-// DELETE SINGLE FILE
-// =====================================================
-
-function deleteFile(id) {
-
-    files = files.filter(file => file.id != id);
-
-    saveFiles();
-
-    renderFiles();
-
-    showToast("🗑️ Object deleted.");
-
-}
-
-
-// =====================================================
-// CLEAR ENTIRE BUCKET
-// =====================================================
-
-function clearAllFiles() {
-
-    // If bucket is already empty
-    if (files.length === 0) {
-
-        showToast("📂 Bucket is already empty.");
-
-        return;
-    }
-
-
-    const confirmed = confirm(
-        "Are you sure you want to delete ALL objects from this bucket?"
-    );
-
-
-    if (!confirmed) {
-        return;
-    }
-
-
-    // Clear JavaScript array
-    files = [];
-
-
-    // IMPORTANT:
-    // Remove the saved S3 simulation data completely
-    localStorage.removeItem("s3Files");
-
-
-    // Reset search/filter
-    document.getElementById("searchInput").value = "";
-
-    document.getElementById("filterSelect").value = "all";
-
-
-    // Update the entire interface
-    renderFiles();
-
-
-    showToast("✅ Bucket cleared successfully!");
-
-}
-
-
-// =====================================================
-// SAVE FILES
-// =====================================================
 
 function saveFiles() {
-
-    try {
-
-        localStorage.setItem(
-            "s3Files",
-            JSON.stringify(files)
-        );
-
-    } catch (error) {
-
-        console.error("Could not save files:", error);
-
-        showToast("⚠️ Could not save bucket data.");
-
-    }
-
+    localStorage.setItem("s3Files", JSON.stringify(files));
 }
 
-
-// =====================================================
-// FILE CATEGORY
-// =====================================================
-
-function getCategory(file) {
-
+function category(file) {
     const type = file.type || "";
     const name = file.name.toLowerCase();
-
-
-    if (type.startsWith("image/")) {
-
-        return "image";
-
-    }
-
-
-    if (
-        type.includes("pdf") ||
-        type.includes("text") ||
-        type.includes("document") ||
-        name.endsWith(".doc") ||
-        name.endsWith(".docx") ||
-        name.endsWith(".ppt") ||
-        name.endsWith(".pptx") ||
-        name.endsWith(".xls") ||
-        name.endsWith(".xlsx")
-    ) {
-
-        return "document";
-
-    }
-
-
+    if (type.startsWith("image/")) return "image";
+    if (type.includes("pdf") || type.includes("text") || type.includes("document") ||
+        /\.(doc|docx|ppt|pptx|xls|xlsx)$/.test(name)) return "document";
     return "other";
-
 }
 
+function icon(file) {
+    return category(file) === "image" ? "🖼️" : category(file) === "document" ? "📄" : "📦";
+}
 
-// =====================================================
-// FILE SIZE
-// =====================================================
+function size(bytes) {
+    if (!bytes) return "0 KB";
+    const units = ["B","KB","MB","GB"];
+    const i = Math.min(Math.floor(Math.log(bytes)/Math.log(1024)), 3);
+    return `${(bytes/Math.pow(1024,i)).toFixed(2)} ${units[i]}`;
+}
 
-function formatSize(bytes) {
+function toast(message) {
+    $("toast").textContent = message;
+    $("toast").classList.add("show");
+    setTimeout(() => $("toast").classList.remove("show"), 2200);
+}
 
-    bytes = Number(bytes) || 0;
+function render() {
+    const search = $("searchInput").value.toLowerCase();
+    const filter = $("filterSelect").value;
 
-
-    if (bytes === 0) {
-        return "0 KB";
-    }
-
-
-    const units = ["B", "KB", "MB", "GB"];
-
-
-    const index = Math.min(
-        Math.floor(Math.log(bytes) / Math.log(1024)),
-        units.length - 1
+    const shown = files.filter(f =>
+        f.name.toLowerCase().includes(search) &&
+        (filter === "all" || category(f) === filter)
     );
 
-
-    return (
-        (bytes / Math.pow(1024, index)).toFixed(2)
-        + " "
-        + units[index]
-    );
-
-}
-
-
-// =====================================================
-// FILE ICON
-// =====================================================
-
-function getFileIcon(file) {
-
-    const category = getCategory(file);
-
-
-    if (category === "image") {
-        return "🖼️";
+    if (!shown.length) {
+        $("fileList").innerHTML = `<div class="empty"><div>📂</div><h3>No objects found</h3><p>Upload a file or change your search/filter.</p></div>`;
+    } else {
+        $("fileList").innerHTML = shown.map(f => `
+            <div class="file-row">
+                <div class="file-name">${icon(f)} ${escapeHtml(f.name)}</div>
+                <div class="file-meta">${size(f.size)}</div>
+                <div class="file-meta">${category(f)}</div>
+                <button class="delete-btn" onclick="deleteFile('${f.id}')">Delete</button>
+            </div>
+        `).join("");
     }
 
-
-    if (category === "document") {
-        return "📄";
-    }
-
-
-    return "📦";
-
+    updateAnalytics();
+    updateSmart();
 }
 
-// =====================================================
-// SMART STORAGE MANAGEMENT - ENHANCEMENT
-// =====================================================
+function updateAnalytics() {
+    const total = files.reduce((n,f) => n + Number(f.size || 0), 0);
+    const pct = Math.min(total / LIMIT * 100, 100);
 
-function updateSmartStorage() {
+    $("objectCount").textContent = files.length;
+    $("storageUsed").textContent = size(total);
+    $("imageCount").textContent = files.filter(f => category(f) === "image").length;
+    $("documentCount").textContent = files.filter(f => category(f) === "document").length;
+    $("storagePercentage").textContent = `${pct.toFixed(1)}%`;
+    $("storageText").textContent = `${size(total)} used`;
+    $("progressBar").style.width = `${pct}%`;
+    $("warningBox").classList.toggle("hidden", pct < 70);
+}
 
-    const totalSize =
-        files.reduce(
-            (total, file) =>
-                total + Number(file.size || 0),
-            0
-        );
+function updateSmart() {
+    const total = files.reduce((n,f) => n + Number(f.size || 0), 0);
+    const pct = Math.min(total / LIMIT * 100, 100);
 
+    $("smartPercentage").textContent = `${pct.toFixed(1)}%`;
+    $("smartProgress").style.width = `${pct}%`;
 
-    const percentage =
-        Math.min(
-            (totalSize / STORAGE_LIMIT) * 100,
-            100
-        );
-
-
-    // Storage percentage
-    document.getElementById("smartPercentage")
-        .textContent =
-        percentage.toFixed(1) + "%";
-
-
-    document.getElementById("smartProgress")
-        .style.width =
-        percentage + "%";
-
-
-    // Find largest object
-    if (files.length === 0) {
-
-        document.getElementById("largestFile")
-            .textContent = "No objects";
-
-        document.getElementById("largestFileSize")
-            .textContent = "—";
-
-        document.getElementById("storageStatus")
-            .textContent = "✓ Healthy";
-
-        document.getElementById("storageRecommendation")
-            .textContent =
-            "Storage usage is within normal limits.";
-
-        document.getElementById("smartRecommendation")
-            .textContent =
-            "💡 Upload files to receive storage optimization insights.";
-
+    if (!files.length) {
+        $("largestFile").textContent = "No objects";
+        $("largestFileSize").textContent = "—";
+        $("storageStatus").textContent = "✓ Healthy";
+        $("storageRecommendation").textContent = "Storage usage is within normal limits.";
+        $("smartRecommendation").textContent = "💡 Upload files to receive storage optimization insights.";
         return;
     }
 
+    const largest = files.reduce((a,b) => Number(a.size) >= Number(b.size) ? a : b);
+    $("largestFile").textContent = largest.name;
+    $("largestFileSize").textContent = size(largest.size);
 
-    const largest =
-        files.reduce(
-            (largest, file) =>
-                Number(file.size) > Number(largest.size)
-                    ? file
-                    : largest
-        );
-
-
-    document.getElementById("largestFile")
-        .textContent =
-        largest.name;
-
-
-    document.getElementById("largestFileSize")
-        .textContent =
-        formatSize(largest.size);
-
-
-    // Storage status
-    const status =
-        document.getElementById("storageStatus");
-
-    const recommendation =
-        document.getElementById("storageRecommendation");
-
-    const smartRecommendation =
-        document.getElementById("smartRecommendation");
-
-
-    if (percentage >= 90) {
-
-        status.textContent =
-            "🚨 Critical";
-
-        recommendation.textContent =
-            "Bucket is almost full.";
-
-        smartRecommendation.innerHTML =
-            "🚨 <strong>Critical storage usage.</strong> " +
-            "Consider removing unused or large objects immediately.";
-
-    }
-
-    else if (percentage >= 70) {
-
-        status.textContent =
-            "⚠️ Attention";
-
-        recommendation.textContent =
-            "Storage usage is getting high.";
-
-        smartRecommendation.innerHTML =
-            "⚠️ <strong>Storage optimization recommended.</strong> " +
-            "Review your largest objects and remove unnecessary files.";
-
-    }
-
-    else {
-
-        status.textContent =
-            "✓ Healthy";
-
-        recommendation.textContent =
-            "Storage usage is within normal limits.";
-
-        smartRecommendation.innerHTML =
-            "💡 <strong>Optimization tip:</strong> " +
-            largest.name +
-            " is your largest object at " +
-            formatSize(largest.size) +
-            ".";
-
-    }
-
-}
-// =====================================================
-// RENDER FILE LIST
-// =====================================================
-
-function renderFiles() {
-
-    const list =
-        document.getElementById("fileList");
-
-
-    const search =
-        document.getElementById("searchInput")
-            .value
-            .toLowerCase();
-
-
-    const filter =
-        document.getElementById("filterSelect")
-            .value;
-
-
-    const filteredFiles =
-        files.filter(file => {
-
-            const matchesSearch =
-                file.name
-                    .toLowerCase()
-                    .includes(search);
-
-
-            const matchesFilter =
-                filter === "all" ||
-                getCategory(file) === filter;
-
-
-            return matchesSearch && matchesFilter;
-
-        });
-
-
-    if (filteredFiles.length === 0) {
-
-        list.innerHTML = `
-            <div class="empty-state">
-                <div>📂</div>
-                <h3>No objects found</h3>
-                <p>Try uploading a file or changing your filter.</p>
-            </div>
-        `;
-
+    if (pct >= 90) {
+        $("storageStatus").textContent = "🚨 Critical";
+        $("storageRecommendation").textContent = "Bucket is almost full.";
+        $("smartRecommendation").innerHTML = "🚨 <strong>Critical storage usage.</strong> Review and remove unnecessary objects.";
+    } else if (pct >= 70) {
+        $("storageStatus").textContent = "⚠️ Attention";
+        $("storageRecommendation").textContent = "Storage usage is getting high.";
+        $("smartRecommendation").innerHTML = "⚠️ <strong>Optimization recommended.</strong> Review your largest objects.";
     } else {
-
-        list.innerHTML =
-            filteredFiles.map(file => `
-
-                <div class="file-row">
-
-                    <div class="file-name">
-
-                        <span>
-                            ${getFileIcon(file)}
-                        </span>
-
-                        ${escapeHTML(file.name)}
-
-                    </div>
-
-
-                    <div class="file-meta">
-                        ${formatSize(file.size)}
-                    </div>
-
-
-                    <div class="file-meta">
-                        ${getCategory(file)}
-                    </div>
-
-
-                    <div>
-
-                        <button
-                            class="delete-btn"
-                            onclick="deleteFile(${file.id})">
-
-                            Delete
-
-                        </button>
-
-                    </div>
-
-                </div>
-
-            `).join("");
-
+        $("storageStatus").textContent = "✓ Healthy";
+        $("storageRecommendation").textContent = "Storage usage is within normal limits.";
+        $("smartRecommendation").innerHTML = `💡 <strong>Optimization tip:</strong> ${escapeHtml(largest.name)} is your largest object at ${size(largest.size)}.`;
     }
-
-
-    updateAnalytics();
-    updateSmartStorage();
-
 }
 
-
-// =====================================================
-// ANALYTICS
-// =====================================================
-
-function updateAnalytics() {
-
-    const totalSize =
-        files.reduce(
-            (total, file) =>
-                total + Number(file.size || 0),
-            0
-        );
-
-
-    const images =
-        files.filter(
-            file => getCategory(file) === "image"
-        ).length;
-
-
-    const documents =
-        files.filter(
-            file => getCategory(file) === "document"
-        ).length;
-
-
-    const percentage =
-        Math.min(
-            (totalSize / STORAGE_LIMIT) * 100,
-            100
-        );
-
-
-    document.getElementById("objectCount")
-        .textContent = files.length;
-
-
-    document.getElementById("storageUsed")
-        .textContent = formatSize(totalSize);
-
-
-    document.getElementById("imageCount")
-        .textContent = images;
-
-
-    document.getElementById("documentCount")
-        .textContent = documents;
-
-
-    document.getElementById("storagePercentage")
-        .textContent =
-        percentage.toFixed(1) + "%";
-
-
-    document.getElementById("storageText")
-        .textContent =
-        formatSize(totalSize) + " used";
-
-
-    document.getElementById("progressBar")
-        .style.width =
-        percentage + "%";
-
-
-    const warning =
-        document.getElementById("warningBox");
-
-
-    if (percentage >= 70) {
-
-        warning.classList.remove("hidden");
-
-    } else {
-
-        warning.classList.add("hidden");
-
+function upload() {
+    const input = $("fileInput");
+    if (!input.files.length) {
+        toast("⚠️ Please choose a file first.");
+        return;
     }
 
+    const file = input.files[0];
+    const used = files.reduce((n,f) => n + Number(f.size || 0), 0);
+
+    if (used + file.size > LIMIT) {
+        toast("❌ Storage limit exceeded!");
+        return;
+    }
+
+    files.push({
+        id: `${Date.now()}-${Math.random()}`,
+        name: file.name,
+        size: file.size,
+        type: file.type || "application/octet-stream",
+        uploadedAt: new Date().toLocaleString()
+    });
+
+    saveFiles();
+    input.value = "";
+    $("selectedFile").textContent = "No file selected";
+    render();
+    toast("✅ Object uploaded to S3!");
 }
 
+function deleteFile(id) {
+    files = files.filter(f => String(f.id) !== String(id));
+    saveFiles();
+    render();
+    toast("🗑️ Object deleted.");
+}
 
-// =====================================================
-// ESCAPE FILE NAME
-// =====================================================
+function clearBucket() {
+    if (!files.length) {
+        toast("📂 Bucket is already empty.");
+        return;
+    }
 
-function escapeHTML(text) {
+    if (!confirm("Are you sure you want to delete ALL objects from this bucket?")) return;
 
-    const div =
-        document.createElement("div");
+    files = [];
+    localStorage.removeItem("s3Files");
+    $("searchInput").value = "";
+    $("filterSelect").value = "all";
+    render();
+    toast("✅ Bucket cleared successfully!");
+}
 
+function escapeHtml(text) {
+    const div = document.createElement("div");
     div.textContent = text;
-
     return div.innerHTML;
-
 }
-
-
-// =====================================================
-// TOAST
-// =====================================================
-
-function showToast(message) {
-
-    const toast =
-        document.getElementById("toast");
-
-
-    toast.textContent = message;
-
-    toast.classList.add("show");
-
-
-    setTimeout(() => {
-
-        toast.classList.remove("show");
-
-    }, 2500);
-
-}
-
-
-// =====================================================
-// DARK MODE
-// =====================================================
 
 function toggleTheme() {
-
     document.body.classList.toggle("dark");
-
-
-    const isDark =
-        document.body.classList.contains("dark");
-
-
-    localStorage.setItem(
-        "s3DarkMode",
-        isDark ? "true" : "false"
-    );
-
-
-    updateThemeButton();
-
+    const dark = document.body.classList.contains("dark");
+    localStorage.setItem("s3DarkMode", dark ? "true" : "false");
+    $("themeToggle").textContent = dark ? "☀️" : "🌙";
 }
-
-
-// =====================================================
-// UPDATE THEME BUTTON
-// =====================================================
-
-function updateThemeButton() {
-
-    const button =
-        document.getElementById("themeToggle");
-
-
-    const isDark =
-        document.body.classList.contains("dark");
-
-
-    button.textContent =
-        isDark ? "☀️" : "🌙";
-
-
-    button.title =
-        isDark
-            ? "Switch to light mode"
-            : "Switch to dark mode";
-
-}
-
-
-// =====================================================
-// LOAD DARK MODE
-// =====================================================
 
 function loadTheme() {
-
-    const darkMode =
-        localStorage.getItem("s3DarkMode");
-
-
-    if (darkMode === "true") {
-
-        document.body.classList.add("dark");
-
-    }
-
-
-    updateThemeButton();
-
+    const dark = localStorage.getItem("s3DarkMode") === "true";
+    document.body.classList.toggle("dark", dark);
+    $("themeToggle").textContent = dark ? "☀️" : "🌙";
 }
 
-
-// =====================================================
-// INITIALIZE
-// =====================================================
+$("fileInput").addEventListener("change", () => {
+    $("selectedFile").textContent = $("fileInput").files.length
+        ? `Selected: ${$("fileInput").files[0].name}`
+        : "No file selected";
+});
+$("uploadBtn").addEventListener("click", upload);
+$("clearBucket").addEventListener("click", clearBucket);
+$("searchInput").addEventListener("input", render);
+$("filterSelect").addEventListener("change", render);
+$("themeToggle").addEventListener("click", toggleTheme);
 
 loadTheme();
-
-renderFiles();
+render();
