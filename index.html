@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 File Manager Simulator</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <nav class="navbar">
+
+        <div class="brand">
+            <div class="aws-icon">☁</div>
+
+            <div>
+                <h2>S3 File Manager</h2>
+                <span>AWS Service Simulation</span>
+            </div>
+        </div>
+
+        <div class="nav-right">
+
+            <div class="status">
+                <span class="status-dot"></span>
+                Simulation Active
+            </div>
+
+            <button
+                class="theme-btn"
+                id="themeToggle"
+                onclick="toggleTheme()"
+                title="Toggle dark mode">
+                🌙
+            </button>
+
+        </div>
+
+    </nav>
+
+
+    <main class="container">
+
+        <!-- Bucket Header -->
+        <section class="bucket-header">
+
+            <div>
+                <p class="label">BUCKET</p>
+
+                <div class="bucket-name">
+                    <span>📦</span>
+                    <strong>student-storage-bucket</strong>
+                </div>
+
+                <p class="bucket-description">
+                    Simulated Amazon S3 object storage
+                </p>
+            </div>
+
+            <button class="clear-btn" onclick="clearAllFiles()">
+                🗑 Clear Bucket
+            </button>
+
+        </section>
+
+
+        <!-- Analytics Cards -->
+        <section class="stats-grid">
+
+            <div class="stat-card">
+                <div class="stat-icon blue">📁</div>
+
+                <div>
+                    <p>Total Objects</p>
+                    <h2 id="objectCount">0</h2>
+                </div>
+            </div>
+
+
+            <div class="stat-card">
+                <div class="stat-icon purple">💾</div>
+
+                <div>
+                    <p>Storage Used</p>
+                    <h2 id="storageUsed">0 KB</h2>
+                </div>
+            </div>
+
+
+            <div class="stat-card">
+                <div class="stat-icon green">🖼️</div>
+
+                <div>
+                    <p>Images</p>
+                    <h2 id="imageCount">0</h2>
+                </div>
+            </div>
+
+
+            <div class="stat-card">
+                <div class="stat-icon orange">📄</div>
+
+                <div>
+                    <p>Documents</p>
+                    <h2 id="documentCount">0</h2>
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- Storage Analytics -->
+        <section class="analytics-card">
+
+            <div class="section-title">
+
+                <div>
+                    <h3>Storage Analytics</h3>
+                    <p>Bucket capacity monitoring</p>
+                </div>
+
+                <strong id="storagePercentage">0%</strong>
+
+            </div>
+
+
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+
+
+            <div class="storage-info">
+                <span id="storageText">0 KB used</span>
+                <span>10 MB capacity</span>
+            </div>
+
+
+            <div id="warningBox" class="warning hidden">
+                ⚠️ Storage usage is above 70%. Consider deleting unused objects.
+            </div>
+
+        </section>
+        <!-- Smart Storage Enhancement -->
+        <section class="smart-card">
+
+            <div class="smart-header">
+                <div>
+                    <h3>🧠 Smart Storage Management</h3>
+                    <p>Automatic storage analysis and optimization insights</p>
+                </div>
+
+                <span class="enhancement-badge">
+                    ENHANCEMENT
+                </span>
+            </div>
+
+
+            <div class="smart-grid">
+
+                <div class="insight-box">
+
+                    <span class="insight-label">
+                        STORAGE UTILIZATION
+                    </span>
+
+                    <strong id="smartPercentage">
+                        0%
+                    </strong>
+
+                    <div class="mini-progress">
+                        <div
+                            id="smartProgress"
+                            class="mini-progress-bar">
+                        </div>
+                    </div>
+
+                </div>
+
+
+                <div class="insight-box">
+
+                    <span class="insight-label">
+                        LARGEST OBJECT
+                    </span>
+
+                    <strong id="largestFile">
+                        No objects
+                    </strong>
+
+                    <span id="largestFileSize">
+                        —
+                    </span>
+
+                </div>
+
+
+                <div class="insight-box">
+
+                    <span class="insight-label">
+                        STORAGE STATUS
+                    </span>
+
+                    <strong id="storageStatus">
+                        ✓ Healthy
+                    </strong>
+
+                    <span id="storageRecommendation">
+                        Storage usage is within normal limits.
+                    </span>
+
+                </div>
+
+            </div>
+
+
+            <div id="smartRecommendation" class="smart-recommendation">
+                💡 Upload files to receive storage optimization insights.
+            </div>
+
+        </section>
+
+
+        <!-- Upload Section -->
+        <section class="upload-card">
+
+            <div class="upload-title">
+                <h3>Upload Object</h3>
+                <p>Add a file to your simulated S3 bucket</p>
+            </div>
+
+
+            <div class="upload-area" id="uploadArea">
+
+                <div class="upload-icon">☁️</div>
+
+                <h3>Choose a file</h3>
+
+                <p>
+                    Upload any file to simulate an S3 object
+                </p>
+
+                <input type="file" id="fileInput">
+
+                <label for="fileInput" class="choose-btn">
+                    Choose File
+                </label>
+
+                <span id="selectedFile">
+                    No file selected
+                </span>
+
+                <button class="upload-btn" onclick="uploadFile()">
+                    Upload to S3
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- Objects -->
+        <section class="objects-card">
+
+            <div class="objects-header">
+
+                <div>
+                    <h3>Objects</h3>
+                    <p>Files currently stored in the bucket</p>
+                </div>
+
+
+                <div class="controls">
+
+                    <input
+                        type="text"
+                        id="searchInput"
+                        placeholder="🔍 Search objects..."
+                        oninput="renderFiles()"
+                    >
+
+
+                    <select
+                        id="filterSelect"
+                        onchange="renderFiles()">
+
+                        <option value="all">All Files</option>
+                        <option value="image">Images</option>
+                        <option value="document">Documents</option>
+                        <option value="other">Other</option>
+
+                    </select>
+
+                </div>
+
+            </div>
+
+
+            <div id="fileList" class="file-list">
+
+                <div class="empty-state">
+                    <div>📂</div>
+                    <h3>No objects in bucket</h3>
+                    <p>Upload a file to get started.</p>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- AWS Explanation -->
+        <section class="info-card">
+
+            <div class="info-icon">☁️</div>
+
+            <div>
+
+                <h3>About Amazon S3</h3>
+
+                <p>
+                    Amazon Simple Storage Service (S3) is an object storage
+                    service used to store and retrieve files, data, images,
+                    backups and other digital objects.
+                </p>
+
+
+                <div class="features">
+
+                    <span>✓ Object Storage</span>
+                    <span>✓ Scalable</span>
+                    <span>✓ High Durability</span>
+                    <span>✓ Easy Retrieval</span>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <footer>
+        <p>AWS S3 File Manager Simulator • Student Assignment</p>
+    </footer>
+
+
+    <div id="toast" class="toast"></div>
+
+
+    <script src="script.js"></script>
+
+</body>
+</html>
