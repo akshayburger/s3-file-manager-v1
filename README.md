@@ -9,7 +9,7 @@ The application demonstrates the core concepts of S3 object storage through a si
 
 **Deployment:** Netlify
 
-> Add the final Netlify deployment link here after deployment.
+> (https://awssimulation.netlify.app/)
 
 ---
 
