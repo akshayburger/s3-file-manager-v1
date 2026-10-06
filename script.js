@@ -1,7 +1,9 @@
 const LIMIT = 10 * 1024 * 1024;
-let files = loadFiles();
+const DB_NAME = "s3FileManager";
+const STORE = "objects";
 
 const $ = id => document.getElementById(id);
+let files = loadFiles();
 
 function loadFiles() {
     try {
@@ -12,8 +14,85 @@ function loadFiles() {
     }
 }
 
+function metadataOnly(list) {
+    return list.map(({ id, name, size, type, uploadedAt }) => ({
+        id, name, size, type, uploadedAt
+    }));
+}
+
 function saveFiles() {
-    localStorage.setItem("s3Files", JSON.stringify(files));
+    localStorage.setItem("s3Files", JSON.stringify(metadataOnly(files)));
+}
+
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+function dbRequest(mode, action) {
+    return openDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE, mode);
+        const store = tx.objectStore(STORE);
+        const request = action(store);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    }));
+}
+
+function putObject(id, blob) {
+    return dbRequest("readwrite", store => store.put(blob, id));
+}
+
+function getObject(id) {
+    return dbRequest("readonly", store => store.get(id));
+}
+
+function deleteObject(id) {
+    return dbRequest("readwrite", store => store.delete(id));
+}
+
+function clearObjects() {
+    return dbRequest("readwrite", store => store.clear());
+}
+
+function dataUrlToBlob(dataUrl) {
+    const [header, data] = String(dataUrl).split(",");
+    const mime = (header.match(/:(.*?);/) || [])[1] || "application/octet-stream";
+    const binary = atob(data || "");
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+}
+
+async function migrateOldContents() {
+    let changed = false;
+
+    for (const file of files) {
+        if (!file.content) continue;
+        try {
+            await putObject(file.id, dataUrlToBlob(file.content));
+        } catch {
+            /* keep going so metadata can still be compacted */
+        }
+        delete file.content;
+        changed = true;
+    }
+
+    if (changed) {
+        try {
+            saveFiles();
+        } catch {
+            localStorage.removeItem("s3Files");
+            saveFiles();
+        }
+    }
 }
 
 function category(file) {
@@ -122,15 +201,6 @@ function updateSmart() {
     }
 }
 
-function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-    });
-}
-
 async function upload() {
     const input = $("fileInput");
     if (!input.files.length) {
@@ -146,29 +216,23 @@ async function upload() {
         return;
     }
 
-    let content;
-    try {
-        content = await readFileAsDataURL(file);
-    } catch {
-        toast("❌ Could not read the selected file.");
-        return;
-    }
-
     const record = {
         id: `${Date.now()}-${Math.random()}`,
         name: file.name,
         size: file.size,
         type: file.type || "application/octet-stream",
-        uploadedAt: new Date().toLocaleString(),
-        content
+        uploadedAt: new Date().toLocaleString()
     };
 
-    files.push(record);
-
     try {
+        await putObject(record.id, file);
+        files.push(record);
         saveFiles();
     } catch {
-        files.pop();
+        files = files.filter(f => f.id !== record.id);
+        try {
+            await deleteObject(record.id);
+        } catch { /* ignore */ }
         toast("❌ Could not save file. Browser storage is full.");
         return;
     }
@@ -179,35 +243,43 @@ async function upload() {
     toast("✅ Object uploaded to S3!");
 }
 
-function downloadFile(id) {
+async function downloadFile(id) {
     const file = files.find(f => String(f.id) === String(id));
     if (!file) {
         toast("❌ File not found.");
         return;
     }
 
-    if (!file.content) {
+    let blob = await getObject(id);
+    if (!blob && file.content) blob = dataUrlToBlob(file.content);
+
+    if (!blob) {
         toast("⚠️ This file has no stored data. Please re-upload it to download.");
         return;
     }
 
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = file.content;
+    link.href = url;
     link.download = file.name;
     document.body.appendChild(link);
     link.click();
     link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast("⬇️ Download started.");
 }
 
-function deleteFile(id) {
+async function deleteFile(id) {
     files = files.filter(f => String(f.id) !== String(id));
     saveFiles();
+    try {
+        await deleteObject(id);
+    } catch { /* ignore */ }
     render();
     toast("🗑️ Object deleted.");
 }
 
-function clearBucket() {
+async function clearBucket() {
     if (!files.length) {
         toast("📂 Bucket is already empty.");
         return;
@@ -217,6 +289,9 @@ function clearBucket() {
 
     files = [];
     localStorage.removeItem("s3Files");
+    try {
+        await clearObjects();
+    } catch { /* ignore */ }
     $("searchInput").value = "";
     $("filterSelect").value = "all";
     render();
@@ -254,4 +329,4 @@ $("filterSelect").addEventListener("change", render);
 $("themeToggle").addEventListener("click", toggleTheme);
 
 loadTheme();
-render();
+migrateOldContents().then(render);
