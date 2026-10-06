@@ -56,10 +56,15 @@ function render() {
     } else {
         $("fileList").innerHTML = shown.map(f => `
             <div class="file-row">
-                <div class="file-name">${icon(f)} ${escapeHtml(f.name)}</div>
+                <button class="file-name" onclick="downloadFile('${f.id}')" title="Download ${escapeHtml(f.name)}">
+                    ${icon(f)} ${escapeHtml(f.name)}
+                </button>
                 <div class="file-meta">${size(f.size)}</div>
                 <div class="file-meta">${category(f)}</div>
-                <button class="delete-btn" onclick="deleteFile('${f.id}')">Delete</button>
+                <div class="file-actions">
+                    <button class="download-btn" onclick="downloadFile('${f.id}')">Download</button>
+                    <button class="delete-btn" onclick="deleteFile('${f.id}')">Delete</button>
+                </div>
             </div>
         `).join("");
     }
@@ -117,7 +122,16 @@ function updateSmart() {
     }
 }
 
-function upload() {
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function upload() {
     const input = $("fileInput");
     if (!input.files.length) {
         toast("⚠️ Please choose a file first.");
@@ -132,19 +146,58 @@ function upload() {
         return;
     }
 
-    files.push({
+    let content;
+    try {
+        content = await readFileAsDataURL(file);
+    } catch {
+        toast("❌ Could not read the selected file.");
+        return;
+    }
+
+    const record = {
         id: `${Date.now()}-${Math.random()}`,
         name: file.name,
         size: file.size,
         type: file.type || "application/octet-stream",
-        uploadedAt: new Date().toLocaleString()
-    });
+        uploadedAt: new Date().toLocaleString(),
+        content
+    };
 
-    saveFiles();
+    files.push(record);
+
+    try {
+        saveFiles();
+    } catch {
+        files.pop();
+        toast("❌ Could not save file. Browser storage is full.");
+        return;
+    }
+
     input.value = "";
     $("selectedFile").textContent = "No file selected";
     render();
     toast("✅ Object uploaded to S3!");
+}
+
+function downloadFile(id) {
+    const file = files.find(f => String(f.id) === String(id));
+    if (!file) {
+        toast("❌ File not found.");
+        return;
+    }
+
+    if (!file.content) {
+        toast("⚠️ This file has no stored data. Please re-upload it to download.");
+        return;
+    }
+
+    const link = document.createElement("a");
+    link.href = file.content;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    toast("⬇️ Download started.");
 }
 
 function deleteFile(id) {
