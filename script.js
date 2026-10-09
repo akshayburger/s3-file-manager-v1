@@ -1,3 +1,4 @@
+const ALERT_API_URL = "https://v3jrp0w8v4.execute-api.us-east-1.amazonaws.com"
 const LIMIT = 10 * 1024 * 1024;
 const DB_NAME = "s3FileManager";
 const STORE = "objects";
@@ -166,6 +167,63 @@ function updateAnalytics() {
     $("warningBox").classList.toggle("hidden", pct < 70);
 }
 
+function getStorageLevel(pct) {
+    if (pct >= 90) return "critical";
+    if (pct >= 70) return "high";
+    return "normal";
+}
+
+async function sendStorageAlert(pct, total, largestFile) {
+    if (pct < 70) return;
+
+    try {
+        const response = await fetch(ALERT_API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                storagePercentage: Number(pct.toFixed(1)),
+                storageUsed: size(total),
+                largestObject: largestFile
+                    ? largestFile.name
+                    : "None"
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
+
+        console.log("Storage alert published successfully.");
+    } catch (error) {
+        console.error("Storage alert failed:", error);
+    }
+}
+
+async function checkStorageAlert(pct, total, largestFile) {
+    const levels = {
+        normal: 0,
+        high: 1,
+        critical: 2
+    };
+
+    const currentLevel = getStorageLevel(pct);
+    const previousLevel =
+        localStorage.getItem("s3StorageAlertLevel") || "normal";
+
+    // Save the new level before awaiting anything.
+    // This prevents duplicate alerts when the UI re-renders.
+    if (currentLevel === previousLevel) return;
+
+    localStorage.setItem("s3StorageAlertLevel", currentLevel);
+
+    // Notify only when moving UP to a more severe level.
+    if (levels[currentLevel] > levels[previousLevel]) {
+        await sendStorageAlert(pct, total, largestFile);
+    }
+}
+
 function updateSmart() {
     const total = files.reduce((n,f) => n + Number(f.size || 0), 0);
     const pct = Math.min(total / LIMIT * 100, 100);
@@ -179,7 +237,9 @@ function updateSmart() {
         $("storageStatus").textContent = "✓ Healthy";
         $("storageRecommendation").textContent = "Storage usage is within normal limits.";
         $("smartRecommendation").textContent = "💡 Upload files to receive storage optimization insights.";
+        checkStorageAlert(pct, total, null);
         return;
+        
     }
 
     const largest = files.reduce((a,b) => Number(a.size) >= Number(b.size) ? a : b);
@@ -199,6 +259,7 @@ function updateSmart() {
         $("storageRecommendation").textContent = "Storage usage is within normal limits.";
         $("smartRecommendation").innerHTML = `💡 <strong>Optimization tip:</strong> ${escapeHtml(largest.name)} is your largest object at ${size(largest.size)}.`;
     }
+    checkStorageAlert(pct, total, largest);
 }
 
 async function upload() {
